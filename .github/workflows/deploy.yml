@@ -1,0 +1,116 @@
+name: Deploy to Server via SSH
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p deploy_artifact
+          cp -R dist deploy_artifact/dist
+          cp package.json package-lock.json deploy_artifact/
+          cp -R logs deploy_artifact/logs || true
+          if [ -f ecosystem.config.js ]; then cp ecosystem.config.js deploy_artifact/; fi
+
+      - name: Add SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: |
+            ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add known_hosts
+        run: |
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Rsync deploy artifact to server
+        run: |
+          # Create backup of existing deployment if it exists
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "\
+            if [ -d '${{ secrets.DEPLOY_PATH }}' ]; then \
+              cp -r '${{ secrets.DEPLOY_PATH }}' '${{ secrets.DEPLOY_PATH }}.backup.$(date +%Y%m%d_%H%M%S)' || true; \
+            fi; \
+            mkdir -p '${{ secrets.DEPLOY_PATH }}' \
+          "
+          rsync -az --delete \
+            deploy_artifact/ \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}/
+
+      - name: Create environment file
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "\
+            cat > ${{ secrets.DEPLOY_PATH }}/.env << 'EOF'
+          # HubSpot Configuration
+          HS_BASE_URL=${{ secrets.HS_BASE_URL }}
+          HS_PRIVATE_APP_KEY=${{ secrets.HS_PRIVATE_APP_KEY }}
+          
+          # Stripe Configuration
+          STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
+          
+          # WooCommerce Configuration - France
+          FR_WOO_CONSUMER_KEY=${{ secrets.FR_WOO_CONSUMER_KEY }}
+          FR_WOO_CONSUMER_SECRET=${{ secrets.FR_WOO_CONSUMER_SECRET }}
+          FR_WOO_BASE_URL=${{ secrets.FR_WOO_BASE_URL }}
+          
+          # WooCommerce Configuration - Germany
+          DE_WOO_CONSUMER_KEY=${{ secrets.DE_WOO_CONSUMER_KEY }}
+          DE_WOO_CONSUMER_SECRET=${{ secrets.DE_WOO_CONSUMER_SECRET }}
+          DE_WOO_BASE_URL=${{ secrets.DE_WOO_BASE_URL }}
+          
+          # WooCommerce Configuration - International
+          INT_WOO_CONSUMER_KEY=${{ secrets.INT_WOO_CONSUMER_KEY }}
+          INT_WOO_CONSUMER_SECRET=${{ secrets.INT_WOO_CONSUMER_SECRET }}
+          INT_WOO_BASE_URL=${{ secrets.INT_WOO_BASE_URL }}
+          
+          # Server Configuration
+          PORT=3000
+          NODE_ENV=development
+          LOG_LEVEL=info
+          EOF
+          "
+
+      - name: Install server deps and restart via PM2
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "\
+            set -euo pipefail; \
+            cd ${{ secrets.DEPLOY_PATH }}; \
+            echo 'Installing dependencies...'; \
+            if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi; \
+            echo 'Checking if port is available...'; \
+            if netstat -tuln | grep -q ':${{ secrets.PORT }} '; then \
+              echo 'WARNING: Port ${{ secrets.PORT }} is already in use!'; \
+              echo 'Current processes using this port:'; \
+              netstat -tuln | grep ':${{ secrets.PORT }} '; \
+            fi; \
+            echo 'Starting/restarting application...'; \
+            if [ -f ecosystem.config.js ]; then \
+              pm2 start ecosystem.config.js --only hubspot-integration-server --update-env || pm2 reload hubspot-integration-server --update-env; \
+            else \
+              pm2 start dist/index.js --name hubspot-integration-server --update-env || pm2 reload hubspot-integration-server --update-env; \
+            fi; \
+            pm2 save; \
+            echo 'PM2 processes:'; \
+            pm2 list \
+          "
+
+      - name: Health check
+        run: |
+          curl -fsS --retry 5 --retry-delay 2 http://${{ secrets.SSH_HOST }}:${{ secrets.PORT }}/health | jq .
