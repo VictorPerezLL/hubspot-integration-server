@@ -35,3 +35,11 @@ pids/
 *.swp
 *.swo
 *~
+
+.github/
+
+# Local payload examples (permitir solo ejemplos sanitizados)
+examples/
+*.har
+*.pcap
+*.trace

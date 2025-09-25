@@ -36,6 +36,15 @@ const envSchema = z.object({
   PORT: z.string().default("3000"),
   NODE_ENV: z.enum(["development", "production"]).default("development"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  
+  // Security configuration - IP Whitelist
+  ALLOWED_WEBHOOK_IPS: z.string().optional(),
+  ALLOWED_ADMIN_IPS: z.string().optional(),
+  TRUSTED_IPS: z.string().optional(),
+  
+  // Rate limiting
+  RATE_LIMIT_WINDOW_MS: z.string().optional(),
+  RATE_LIMIT_MAX_REQUESTS: z.string().optional(),
 });
 
 const result = envSchema.safeParse(process.env as Record<string, string>);

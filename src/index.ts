@@ -3,12 +3,12 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
-import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import { env } from './env';
 
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
+import { generalRateLimit } from './middleware/rateLimiting';
 import { webhookRoutes } from './routes/webhooks';
 import { healthRoutes } from './routes/health';
 
@@ -19,16 +19,32 @@ const app = express();
 const PORT = env.PORT || 3000;
 
 // Security middleware
-app.use(helmet());
-app.use(cors());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  }
+}));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.',
-});
-app.use(limiter);
+// CORS configuration
+app.use(cors({
+  origin: env.NODE_ENV === 'production' ? false : true, // Restrict in production
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Platform']
+}));
+
+// General rate limiting
+app.use(generalRateLimit);
 
 // Compression
 app.use(compression());

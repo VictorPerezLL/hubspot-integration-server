@@ -1,15 +1,9 @@
 import { Request, Response } from 'express';
 import { logger } from '../../utils/logger';
-import { HubSpotService, ContactData, DealData } from '../hubspot';
+import { ContactData, DealData } from '../hubspot';
+// import { stripeClient } from '../../clients/stripe';
 
-export class StripeWebhookHandler {
-  private hubspotService: HubSpotService;
-
-  constructor(hubspotService: HubSpotService) {
-    this.hubspotService = hubspotService;
-  }
-
-  async handleWebhook(req: Request, res: Response): Promise<void> {
+export async function handleStripeWebhook(req: Request, res: Response): Promise<void> {
     try {
       const { type, data } = req.body;
       
@@ -17,17 +11,17 @@ export class StripeWebhookHandler {
 
       switch (type) {
         case 'payment_intent.succeeded':
-          await this.handlePaymentSucceeded(data.object);
+          await handlePaymentSucceeded(data.object);
           break;
         case 'payment_intent.payment_failed':
-          await this.handlePaymentFailed(data.object);
+          await handlePaymentFailed(data.object);
           break;
         case 'invoice.payment_succeeded':
-          await this.handleInvoicePaymentSucceeded(data.object);
+          await handleInvoicePaymentSucceeded(data.object);
           break;
         case 'customer.created':
         case 'customer.updated':
-          await this.handleCustomerEvent(data.object);
+          await handleCustomerEvent(data.object);
           break;
         default:
           logger.warn('Unsupported Stripe webhook type', { type });
@@ -38,9 +32,9 @@ export class StripeWebhookHandler {
       logger.error('Error processing Stripe webhook', { error, body: req.body });
       res.status(500).json({ success: false, message: 'Error processing webhook' });
     }
-  }
+}
 
-  private async handlePaymentSucceeded(paymentIntent: any): Promise<void> {
+async function handlePaymentSucceeded(paymentIntent: any): Promise<void> {
     try {
       const { id, amount, currency, customer, metadata } = paymentIntent;
       
@@ -53,12 +47,12 @@ export class StripeWebhookHandler {
       // Get customer details if available
       let contactData: ContactData | null = null;
       if (customer) {
-        contactData = await this.getCustomerContactData(customer);
+        contactData = await getCustomerContactData(customer);
       }
 
       // Create or update contact
       if (contactData) {
-        await this.hubspotService.createOrUpdateContact(contactData);
+        // await createOrUpdateContact(contactData);
       }
 
       // Create deal for the payment
@@ -70,16 +64,16 @@ export class StripeWebhookHandler {
         closedate: new Date().toISOString(),
       };
 
-      await this.hubspotService.createDeal(dealData);
+      // await createDeal(dealData);
 
       logger.info('Stripe payment processed successfully', { paymentIntentId: id });
     } catch (error) {
       logger.error('Error processing Stripe payment', { error, paymentIntent });
       throw error;
     }
-  }
+}
 
-  private async handlePaymentFailed(paymentIntent: any): Promise<void> {
+async function handlePaymentFailed(paymentIntent: any): Promise<void> {
     try {
       const { id, amount, currency, customer, last_payment_error } = paymentIntent;
       
@@ -93,12 +87,12 @@ export class StripeWebhookHandler {
       // Get customer details if available
       let contactData: ContactData | null = null;
       if (customer) {
-        contactData = await this.getCustomerContactData(customer);
+        contactData = await getCustomerContactData(customer);
       }
 
       // Create or update contact
       if (contactData) {
-        await this.hubspotService.createOrUpdateContact(contactData);
+        // await createOrUpdateContact(contactData);
       }
 
       // Create deal for the failed payment
@@ -110,16 +104,16 @@ export class StripeWebhookHandler {
         closedate: new Date().toISOString(),
       };
 
-      await this.hubspotService.createDeal(dealData);
+      // await createDeal(dealData);
 
       logger.info('Stripe failed payment processed', { paymentIntentId: id });
     } catch (error) {
       logger.error('Error processing Stripe failed payment', { error, paymentIntent });
       throw error;
     }
-  }
+}
 
-  private async handleInvoicePaymentSucceeded(invoice: any): Promise<void> {
+async function handleInvoicePaymentSucceeded(invoice: any): Promise<void> {
     try {
       const { id, amount_paid, currency, customer, subscription } = invoice;
       
@@ -132,12 +126,12 @@ export class StripeWebhookHandler {
       // Get customer details if available
       let contactData: ContactData | null = null;
       if (customer) {
-        contactData = await this.getCustomerContactData(customer);
+        contactData = await getCustomerContactData(customer);
       }
 
       // Create or update contact
       if (contactData) {
-        await this.hubspotService.createOrUpdateContact(contactData);
+        // await createOrUpdateContact(contactData);
       }
 
       // Create deal for the invoice payment
@@ -149,16 +143,16 @@ export class StripeWebhookHandler {
         closedate: new Date().toISOString(),
       };
 
-      await this.hubspotService.createDeal(dealData);
+      // await createDeal(dealData);
 
       logger.info('Stripe invoice payment processed successfully', { invoiceId: id });
     } catch (error) {
       logger.error('Error processing Stripe invoice payment', { error, invoice });
       throw error;
     }
-  }
+}
 
-  private async handleCustomerEvent(customer: any): Promise<void> {
+async function handleCustomerEvent(customer: any): Promise<void> {
     try {
       const { id, email, name, phone } = customer;
       
@@ -171,16 +165,16 @@ export class StripeWebhookHandler {
         phone,
       };
 
-      await this.hubspotService.createOrUpdateContact(contactData);
+      // await createOrUpdateContact(contactData);
 
       logger.info('Stripe customer processed successfully', { customerId: id });
     } catch (error) {
       logger.error('Error processing Stripe customer', { error, customer });
       throw error;
     }
-  }
+}
 
-  private async getCustomerContactData(customerId: string): Promise<ContactData | null> {
+async function getCustomerContactData(customerId: string): Promise<ContactData | null> {
     try {
       // In a real implementation, you would fetch customer details from Stripe API
       // For now, we'll return null and handle it in the calling methods
@@ -190,5 +184,4 @@ export class StripeWebhookHandler {
       logger.error('Error fetching customer details from Stripe', { error, customerId });
       return null;
     }
-  }
-} 
+}

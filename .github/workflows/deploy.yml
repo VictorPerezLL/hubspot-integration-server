@@ -81,8 +81,8 @@ jobs:
           INT_WOO_BASE_URL=${{ secrets.INT_WOO_BASE_URL }}
           
           # Server Configuration
-          PORT=3000
-          NODE_ENV=development
+          PORT=${{ secrets.PORT }}
+          NODE_ENV=production
           LOG_LEVEL=info
           EOF
           "
@@ -94,6 +94,11 @@ jobs:
             cd ${{ secrets.DEPLOY_PATH }}; \
             echo 'Installing dependencies...'; \
             if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi; \
+            echo 'Verifying build artifact exists...'; \
+            if [ ! -f dist/index.js ]; then \
+              echo 'ERROR: dist/index.js not found. Aborting PM2 restart.'; \
+              exit 1; \
+            fi; \
             echo 'Checking if port is available...'; \
             if netstat -tuln | grep -q ':${{ secrets.PORT }} '; then \
               echo 'WARNING: Port ${{ secrets.PORT }} is already in use!'; \
@@ -101,10 +106,14 @@ jobs:
               netstat -tuln | grep ':${{ secrets.PORT }} '; \
             fi; \
             echo 'Starting/restarting application...'; \
-            if [ -f ecosystem.config.js ]; then \
-              pm2 start ecosystem.config.js --only hubspot-integration-server --update-env || pm2 reload hubspot-integration-server --update-env; \
+            if pm2 describe hubspot-integration-server >/dev/null 2>&1; then \
+              pm2 reload hubspot-integration-server --update-env; \
             else \
-              pm2 start dist/index.js --name hubspot-integration-server --update-env || pm2 reload hubspot-integration-server --update-env; \
+              if [ -f ecosystem.config.js ]; then \
+                pm2 start ecosystem.config.js --only hubspot-integration-server --update-env; \
+              else \
+                pm2 start dist/index.js --name hubspot-integration-server --update-env; \
+              fi; \
             fi; \
             pm2 save; \
             echo 'PM2 processes:'; \
