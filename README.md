@@ -86,6 +86,24 @@ npm start
 - `POST /webhooks/stripe` - Stripe specific endpoint
 - `GET /webhooks/status` - Webhook endpoint status
 
+## 🔎 HubSpot: buscar un contacto por email (incluye borrados/archivados)
+
+Este repo incluye un script de consola para localizar un contacto por email. Es útil cuando el contacto está **archivado (borrado)** y el endpoint de búsqueda estándar no lo devuelve.
+
+### Requisitos
+
+- `HS_PRIVATE_APP_KEY` (token de Private App de HubSpot) en tu `.env`
+
+### Ejemplo
+
+```bash
+# Contacto activo
+npm run hubspot:find-contact -- --email gabmarion@gmail.com
+
+# Incluir contactos archivados/borrados y traer todas las propiedades
+npm run hubspot:find-contact -- --email gabmarion@gmail.com --include-archived --all-properties
+```
+
 ## 🔧 Configuration
 
 ### Environment Variables
